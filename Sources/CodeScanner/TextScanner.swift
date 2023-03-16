@@ -87,7 +87,7 @@ public struct TextScannerView: UIViewControllerRepresentable {
         isGalleryPresented: Binding<Bool> = .constant(false),
         videoCaptureDevice: AVCaptureDevice? = AVCaptureDevice.bestForVideo,
         videoSessionPreset: AVCaptureSession.Preset = .high,
-        videoSettings: [String : Any] = [:],
+        videoSettings: [String : Any] = [kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)],
         completion: @escaping (Result<TextScanResult, ScanError>) -> Void
     ) {
         self.validateMatch = validateMatch

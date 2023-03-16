@@ -45,7 +45,7 @@ extension TextScannerView {
             recognitionLevel: VNRequestTextRecognitionLevel = .accurate,
             recognitionLanguages: [String] = [],
             videoSessionPreset: AVCaptureSession.Preset = .high,
-            videoSettings: [String : Any] = [:],
+            videoSettings: [String : Any] = [kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)],
             showViewfinder: Bool = false,
             parentView: TextScannerView
         ) {
@@ -67,7 +67,7 @@ extension TextScannerView {
             self.recognitionLevel = .accurate
             self.recognitionLanguages = []
             self.videoSessionPreset = .high
-            self.videoSettings = [:]
+            self.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)]
             super.init(coder: coder)
         }
         
@@ -309,7 +309,7 @@ extension TextScannerView {
             }
             
             captureSession!.beginConfiguration()
-            captureSession!.sessionPreset = videoSessionPreset //.hd1920x1080 //.vga640x480 // Model image size is smaller.
+            captureSession!.sessionPreset = videoSessionPreset
             
             if (captureSession!.canAddInput(videoInput)) {
                 captureSession!.addInput(videoInput)
@@ -326,7 +326,7 @@ extension TextScannerView {
                 captureSession!.addOutput(videoDataOutput)
                 // Add a video data output
                 videoDataOutput.alwaysDiscardsLateVideoFrames = true
-                videoDataOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)] // TODO
+                videoDataOutput.videoSettings = videoSettings
                 videoDataOutput.setSampleBufferDelegate(self, queue: videoDataOutputQueue)
             } else {
                 didFail(reason: .badOutput)
@@ -449,7 +449,7 @@ extension TextScannerView {
 #endif
         
         func updateViewController(isTorchOn: Bool, isGalleryPresented: Bool, isManualCapture: Bool, isManualSelect: Bool) {
-            if let backCamera = AVCaptureDevice.default(for: .video),
+            if let backCamera = AVCaptureDevice.bestForVideo,
                backCamera.hasTorch
             {
                 try? backCamera.lockForConfiguration()
@@ -489,33 +489,31 @@ extension TextScannerView {
                 return image
             }
             
-            DispatchQueue.main.async {
-                let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)!
-                let ciimage = CIImage(cvPixelBuffer: imageBuffer)
-                let image = convert(cmage: ciimage)
-                
-                guard let cgImage = image.cgImage else { return }
-                
-                // Create a new image-request handler.
-                let requestHandler = VNImageRequestHandler(cgImage: cgImage)
-                
-                // Create a new request to recognize text.
-                let request = VNRecognizeTextRequest(completionHandler: self.recognizeTextHandler)
-                
-                request.recognitionLevel = self.recognitionLevel
-                request.recognitionLanguages = self.recognitionLanguages
-                
-                do {
-                    // Perform the text-recognition request.
-                    if self.isCapturing && !self.didFinishScanning {
-                        try requestHandler.perform([request])
-                    }
-                    
-                } catch {
-                    print("Unable to perform the requests: \(error).")
+            let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)!
+            let ciimage = CIImage(cvPixelBuffer: imageBuffer)
+            let image = convert(cmage: ciimage)
+            
+            guard let cgImage = image.cgImage else { return }
+            
+            // Create a new image-request handler.
+            let requestHandler = VNImageRequestHandler(cgImage: cgImage)
+            
+            // Create a new request to recognize text.
+            let request = VNRecognizeTextRequest(completionHandler: self.recognizeTextHandler)
+            
+            request.recognitionLevel = self.recognitionLevel
+            request.recognitionLanguages = self.recognitionLanguages
+            
+            do {
+                // Perform the text-recognition request.
+                if self.isCapturing && !self.didFinishScanning {
+                    try requestHandler.perform([request])
                 }
                 
+            } catch {
+                print("Unable to perform the requests: \(error).")
             }
+            
         }
         
         private func recognizeTextHandler(request: VNRequest, error: Error?) {
@@ -603,7 +601,7 @@ extension TextScannerView.TextScannerViewController: AVCapturePhotoCaptureDelega
             print("Unable to generate UIImage from image data.");
             return
         }
-//        handler?(qrImage) // TODO
+        //        handler?(qrImage) // TODO
     }
     
     public func photoOutput(
