@@ -28,11 +28,8 @@ public enum TextScanError: Error {
 /// it will report the exact code type that was found.
 @available(macCatalyst 14.0, *)
 public struct TextScanResult {
-    /// The contents of the code.
+    /// The matching String.
     public let string: String
-    
-    /// The image of the code that was matched
-    public let image: UIImage?
 }
 
 /// The operating mode for CodeScannerView.
