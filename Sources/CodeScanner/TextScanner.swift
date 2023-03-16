@@ -7,6 +7,7 @@
 
 import AVFoundation
 import SwiftUI
+import Vision
 
 /// An enum describing the ways CodeScannerView can hit scanning problems.
 public enum TextScanError: Error {
@@ -54,7 +55,10 @@ public enum TextScanMode {
 @available(macCatalyst 14.0, *)
 public struct TextScannerView: UIViewControllerRepresentable {
     
-    public let codeTypes: [AVMetadataObject.ObjectType]
+    public let validateMatch: (String) -> Bool
+    public let preProcessMatches: (String) -> String
+    public let recognitionLevel: VNRequestTextRecognitionLevel
+    public let recognitionLanguages: [String]
     public let scanMode: ScanMode
     public let manualSelect: Bool
     public let scanInterval: Double
@@ -64,10 +68,15 @@ public struct TextScannerView: UIViewControllerRepresentable {
     public var isTorchOn: Bool
     public var isGalleryPresented: Binding<Bool>
     public var videoCaptureDevice: AVCaptureDevice?
+    public let videoSessionPreset: AVCaptureSession.Preset
+    public let videoSettings: [String : Any]
     public var completion: (Result<TextScanResult, ScanError>) -> Void
 
     public init(
-        codeTypes: [AVMetadataObject.ObjectType],
+        validateMatch: @escaping (String) -> Bool = { _ in return true },
+        preProcessMatches: @escaping (String) -> String = { return $0 },
+        recognitionLevel: VNRequestTextRecognitionLevel = .accurate,
+        recognitionLanguages: [String] = [],
         scanMode: ScanMode = .once,
         manualSelect: Bool = false,
         scanInterval: Double = 2.0,
@@ -77,9 +86,14 @@ public struct TextScannerView: UIViewControllerRepresentable {
         isTorchOn: Bool = false,
         isGalleryPresented: Binding<Bool> = .constant(false),
         videoCaptureDevice: AVCaptureDevice? = AVCaptureDevice.bestForVideo,
+        videoSessionPreset: AVCaptureSession.Preset = .high,
+        videoSettings: [String : Any] = [:],
         completion: @escaping (Result<TextScanResult, ScanError>) -> Void
     ) {
-        self.codeTypes = codeTypes
+        self.validateMatch = validateMatch
+        self.preProcessMatches = preProcessMatches
+        self.recognitionLevel = recognitionLevel
+        self.recognitionLanguages = recognitionLanguages
         self.scanMode = scanMode
         self.manualSelect = manualSelect
         self.showViewfinder = showViewfinder
@@ -89,11 +103,20 @@ public struct TextScannerView: UIViewControllerRepresentable {
         self.isTorchOn = isTorchOn
         self.isGalleryPresented = isGalleryPresented
         self.videoCaptureDevice = videoCaptureDevice
+        self.videoSessionPreset = videoSessionPreset
+        self.videoSettings = videoSettings
         self.completion = completion
     }
 
     public func makeUIViewController(context: Context) -> TextScannerViewController {
-        return TextScannerViewController(showViewfinder: showViewfinder, parentView: self)
+        return TextScannerViewController(validateMatch: validateMatch,
+                                         preProcessMatches: preProcessMatches,
+                                         recognitionLevel: recognitionLevel,
+                                         recognitionLanguages: recognitionLanguages,
+                                         videoSessionPreset: videoSessionPreset,
+                                         videoSettings: videoSettings,
+                                         showViewfinder: showViewfinder,
+                                         parentView: self)
     }
 
     public func updateUIViewController(_ uiViewController: TextScannerViewController, context: Context) {
@@ -111,7 +134,7 @@ public struct TextScannerView: UIViewControllerRepresentable {
 @available(macCatalyst 14.0, *)
 struct TextScannerView_Previews: PreviewProvider {
     static var previews: some View {
-        TextScannerView(codeTypes: [.qr]) { result in
+        TextScannerView() { result in
             // do nothing
         }
     }

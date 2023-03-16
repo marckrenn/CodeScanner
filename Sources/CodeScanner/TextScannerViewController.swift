@@ -9,50 +9,6 @@ import AVFoundation
 import UIKit
 import Vision
 
-func isAscii(_ str: String) -> Bool {
-    for scalar in str.unicodeScalars {
-        if scalar.value > 127 { // ASCII characters range from 0 to 127
-            return false
-        }
-    }
-    return true
-}
-
-func containsLettersAndNumbers(_ str: String) -> Bool {
-    let letterCharacterSet = CharacterSet.letters
-    let numberCharacterSet = CharacterSet.decimalDigits
-    
-    let hasLetters = str.rangeOfCharacter(from: letterCharacterSet) != nil
-    let hasNumbers = str.rangeOfCharacter(from: numberCharacterSet) != nil
-    
-    return hasLetters && hasNumbers
-}
-
-extension String {
-    private func mod97() -> Int {
-        let symbols: [Character] = Array(self)
-        let swapped = symbols.dropFirst(4) + symbols.prefix(4)
-        let mod: Int = swapped.reduce(0) { (previousMod, char) in
-            let value = Int(String(char), radix: 36)!
-            let factor = value < 10 ? 10 : 100
-            let m = (factor * previousMod + value) % 97
-            return m
-        }
-        
-        return mod
-    }
-    
-    func isValidIban() -> Bool {
-        guard isAscii(self) && containsLettersAndNumbers(self) && self.count > 4 else { return false }
-        
-        let uppercase = self.uppercased()
-        guard uppercase.range(of: "^[0-9A-Z]*$", options: .regularExpression) != nil else {
-            return false
-        }
-        return (uppercase.mod97() == 1)
-    }
-}
-
 @available(macCatalyst 14.0, *)
 extension TextScannerView {
     
@@ -67,6 +23,13 @@ extension TextScannerView {
         private let showViewfinder: Bool
         private var bufferSize = CGSize(width: 0, height: 0)
         
+        let validateMatch: (String) -> Bool
+        let preProcessMatches: (String) -> String
+        let recognitionLevel: VNRequestTextRecognitionLevel
+        let recognitionLanguages: [String]
+        let videoSessionPreset: AVCaptureSession.Preset
+        let videoSettings: [String : Any]
+        
         private var isGalleryShowing: Bool = false {
             didSet {
                 // Update binding
@@ -76,7 +39,22 @@ extension TextScannerView {
             }
         }
         
-        public init(showViewfinder: Bool = false, parentView: TextScannerView) {
+        public init(
+            validateMatch: @escaping (String) -> Bool = { _ in return true },
+            preProcessMatches: @escaping (String) -> String = { return $0 },
+            recognitionLevel: VNRequestTextRecognitionLevel = .accurate,
+            recognitionLanguages: [String] = [],
+            videoSessionPreset: AVCaptureSession.Preset = .high,
+            videoSettings: [String : Any] = [:],
+            showViewfinder: Bool = false,
+            parentView: TextScannerView
+        ) {
+            self.validateMatch = validateMatch
+            self.preProcessMatches = preProcessMatches
+            self.recognitionLevel = recognitionLevel
+            self.recognitionLanguages = recognitionLanguages
+            self.videoSessionPreset = videoSessionPreset
+            self.videoSettings = videoSettings
             self.parentView = parentView
             self.showViewfinder = showViewfinder
             super.init(nibName: nil, bundle: nil)
@@ -84,6 +62,12 @@ extension TextScannerView {
         
         required init?(coder: NSCoder) {
             self.showViewfinder = false
+            self.validateMatch = { _ in return true }
+            self.preProcessMatches = { return $0 }
+            self.recognitionLevel = .accurate
+            self.recognitionLanguages = []
+            self.videoSessionPreset = .high
+            self.videoSettings = [:]
             super.init(coder: coder)
         }
         
@@ -325,7 +309,7 @@ extension TextScannerView {
             }
             
             captureSession!.beginConfiguration()
-            //            captureSession!.sessionPreset = .hd1920x1080 //.vga640x480 // Model image size is smaller.
+            captureSession!.sessionPreset = videoSessionPreset //.hd1920x1080 //.vga640x480 // Model image size is smaller.
             
             if (captureSession!.canAddInput(videoInput)) {
                 captureSession!.addInput(videoInput)
@@ -465,7 +449,7 @@ extension TextScannerView {
 #endif
         
         func updateViewController(isTorchOn: Bool, isGalleryPresented: Bool, isManualCapture: Bool, isManualSelect: Bool) {
-            if let backCamera = AVCaptureDevice.default(for: AVMediaType.video),
+            if let backCamera = AVCaptureDevice.default(for: .video),
                backCamera.hasTorch
             {
                 try? backCamera.lockForConfiguration()
@@ -518,8 +502,8 @@ extension TextScannerView {
                 // Create a new request to recognize text.
                 let request = VNRecognizeTextRequest(completionHandler: self.recognizeTextHandler)
                 
-                request.recognitionLevel = .accurate
-                request.recognitionLanguages = ["de-AT"] // Locale.current.languageCode? TODO
+                request.recognitionLevel = self.recognitionLevel
+                request.recognitionLanguages = self.recognitionLanguages
                 
                 do {
                     // Perform the text-recognition request.
@@ -537,13 +521,12 @@ extension TextScannerView {
         private func recognizeTextHandler(request: VNRequest, error: Error?) {
             guard let observations = request.results as? [VNRecognizedTextObservation] else { return }
             let recognizedStrings = observations.compactMap { observation in
-                
-                return observation.topCandidates(1).first?.string // TODO: add string preprocessing
-                    .replacingOccurrences(of: " ", with: "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return preProcessMatches(observation.topCandidates(1).first?.string ?? "")
             }
             
-            guard let match = recognizedStrings.first(where: { $0.isValidIban() }) else { return }
+            guard let match = recognizedStrings.first(where: {
+                validateMatch($0)
+            }) else { return }
             handleResult(stringFound: match)
             return
             
