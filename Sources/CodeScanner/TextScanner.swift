@@ -30,9 +30,6 @@ public enum TextScanError: Error {
 public struct TextScanResult {
     /// The contents of the code.
     public let string: String
-
-    /// The type of code that was matched.
-    public let type: AVMetadataObject.ObjectType
     
     /// The image of the code that was matched
     public let image: UIImage?
@@ -70,7 +67,7 @@ public struct TextScannerView: UIViewControllerRepresentable {
     public var isTorchOn: Bool
     public var isGalleryPresented: Binding<Bool>
     public var videoCaptureDevice: AVCaptureDevice?
-    public var completion: (Result<ScanResult, ScanError>) -> Void
+    public var completion: (Result<TextScanResult, ScanError>) -> Void
 
     public init(
         codeTypes: [AVMetadataObject.ObjectType],
@@ -83,7 +80,7 @@ public struct TextScannerView: UIViewControllerRepresentable {
         isTorchOn: Bool = false,
         isGalleryPresented: Binding<Bool> = .constant(false),
         videoCaptureDevice: AVCaptureDevice? = AVCaptureDevice.bestForVideo,
-        completion: @escaping (Result<ScanResult, ScanError>) -> Void
+        completion: @escaping (Result<TextScanResult, ScanError>) -> Void
     ) {
         self.codeTypes = codeTypes
         self.scanMode = scanMode

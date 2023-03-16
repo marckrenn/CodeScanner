@@ -56,7 +56,7 @@ extension String {
 @available(macCatalyst 14.0, *)
 extension TextScannerView {
     
-    public class TextScannerViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate, AVCaptureMetadataOutputObjectsDelegate, AVCaptureVideoDataOutputSampleBufferDelegate {
+    public class TextScannerViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate, AVCaptureVideoDataOutputSampleBufferDelegate {
         private let photoOutput = AVCapturePhotoOutput()
         private var isCapturing = false
         private var handler: ((UIImage) -> Void)?
@@ -66,6 +66,7 @@ extension TextScannerView {
         var lastTime = Date(timeIntervalSince1970: 0)
         private let showViewfinder: Bool
         private var bufferSize = CGSize(width: 0, height: 0)
+        var iban: String? = nil
         
         
         private var isGalleryShowing: Bool = false {
@@ -116,8 +117,9 @@ extension TextScannerView {
                 if qrCodeLink == "" {
                     didFail(reason: .badOutput)
                 } else {
-                    let result = ScanResult(string: qrCodeLink, type: .qr, image: qrcodeImg)
-                    found(result)
+                    return // TODO: fix
+//                    let result = TextScanResult(string: qrCodeLink, image: qrcodeImg)
+//                    found(result)
                 }
             } else {
                 print("Something went wrong")
@@ -491,7 +493,7 @@ extension TextScannerView {
         }
         
         public func reset() {
-            codesFound.removeAll()
+            iban = nil
             didFinishScanning = false
             lastTime = Date(timeIntervalSince1970: 0)
         }
@@ -504,25 +506,6 @@ extension TextScannerView {
         
         public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection
         ) {
-            //            print(Date().description(with: .autoupdatingCurrent))
-            let curDeviceOrientation = UIDevice.current.orientation
-            let exifOrientation: CGImagePropertyOrientation
-            
-            switch curDeviceOrientation {
-            case UIDeviceOrientation.portraitUpsideDown:  // Device oriented vertically, home button on the top
-                exifOrientation = .left
-            case UIDeviceOrientation.landscapeLeft:       // Device oriented horizontally, home button on the right
-                exifOrientation = .upMirrored
-            case UIDeviceOrientation.landscapeRight:      // Device oriented horizontally, home button on the left
-                exifOrientation = .down
-            case UIDeviceOrientation.portrait:            // Device oriented vertically, home button on the bottom
-                exifOrientation = .up
-            default:
-                exifOrientation = .up
-            }
-            
-            
-//            let cgImage = getImageFromSampleBuffer(sampleBuffer: sampleBuffer)
             
             func convert(cmage: CIImage) -> UIImage {
                  let context = CIContext(options: nil)
@@ -537,9 +520,6 @@ extension TextScannerView {
                 let image = convert(cmage: ciimage)
                 
                 guard let cgImage = image.cgImage else { return }
-   
-                //                self.imageView.image = image
-
 
                 // Create a new image-request handler.
                 let requestHandler = VNImageRequestHandler(cgImage: cgImage)
@@ -550,7 +530,50 @@ extension TextScannerView {
 
                 do {
                     // Perform the text-recognition request.
-                    try requestHandler.perform([request])
+                    if self.isCapturing && !self.didFinishScanning {
+                        try requestHandler.perform([request])
+                    }
+                    
+                    guard self.didFinishScanning == false else { return }
+                    
+                    let photoSettings = AVCapturePhotoSettings()
+                    guard !self.isCapturing else { return }
+                    self.isCapturing = true
+                    
+                    self.handler = { [self] image in
+                        guard let iban = iban else { return }
+                        let result = TextScanResult(string: iban, image: image)
+                        
+                        switch parentView.scanMode {
+                        case .once:
+                            found(result)
+                            // make sure we only trigger scan once per use
+                            didFinishScanning = true
+                            
+                        case .manual:
+                            if !didFinishScanning, isWithinManualCaptureInterval() {
+                                found(result)
+                                didFinishScanning = true
+                            }
+                            
+                        case .oncePerCode:
+                            return
+                            // TODO: Fix
+//                            if !codesFound.contains(stringValue) {
+//                                codesFound.insert(stringValue)
+//                                found(result)
+//                            }
+                            
+                        case .continuous:
+                            if isPastScanInterval() {
+                                print(result)
+                                found(result)
+                            }
+                        }
+                    }
+//                    self.photoOutput.capturePhoto(with: photoSettings, delegate: self)
+                    
+                    
                 } catch {
                     print("Unable to perform the requests: \(error).")
                 }
@@ -559,60 +582,19 @@ extension TextScannerView {
         }
         
         private func recognizeTextHandler(request: VNRequest, error: Error?) {
-            guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                return
-            }
+            guard let observations = request.results as? [VNRecognizedTextObservation] else { return }
             let recognizedStrings = observations.compactMap { observation in
                 return observation.topCandidates(1).first?.string
+                    .replacingOccurrences(of: " ", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
             }
             
-            recognizedStrings.forEach {
-                if $0.isValidIban() {
-                    print($0)
-                }
-            }
-        }
-        
-        public func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
-            if let metadataObject = metadataObjects.first {
-                guard let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject else { return }
-                guard let stringValue = readableObject.stringValue else { return }
-                
-                guard didFinishScanning == false else { return }
-                
-                let photoSettings = AVCapturePhotoSettings()
-                guard !isCapturing else { return }
-                isCapturing = true
-                
-                handler = { [self] image in
-                    let result = ScanResult(string: stringValue, type: readableObject.type, image: image)
-                    
-                    switch parentView.scanMode {
-                    case .once:
-                        found(result)
-                        // make sure we only trigger scan once per use
-                        didFinishScanning = true
-                        
-                    case .manual:
-                        if !didFinishScanning, isWithinManualCaptureInterval() {
-                            found(result)
-                            didFinishScanning = true
-                        }
-                        
-                    case .oncePerCode:
-                        if !codesFound.contains(stringValue) {
-                            codesFound.insert(stringValue)
-                            found(result)
-                        }
-                        
-                    case .continuous:
-                        if isPastScanInterval() {
-                            found(result)
-                        }
-                    }
-                }
-                photoOutput.capturePhoto(with: photoSettings, delegate: self)
-            }
+            guard let ibanMatch = recognizedStrings.first(where: { $0.isValidIban() }) else { return }
+//            iban = ibanMatch
+            found(TextScanResult(string: ibanMatch, image: nil))
+            self.didFinishScanning = true
+            return
+
         }
         
         func isPastScanInterval() -> Bool {
@@ -623,7 +605,7 @@ extension TextScannerView {
             Date().timeIntervalSince(lastTime) <= 0.5
         }
         
-        func found(_ result: ScanResult) {
+        func found(_ result: TextScanResult) {
             lastTime = Date()
             
             if parentView.shouldVibrateOnSuccess {
