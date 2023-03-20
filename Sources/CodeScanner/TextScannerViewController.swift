@@ -22,9 +22,9 @@ extension TextScannerView {
         var lastTime = Date(timeIntervalSince1970: 0)
         private let showViewfinder: Bool
         private var bufferSize = CGSize(width: 0, height: 0)
+        let roi = CGRect(origin: CGPoint(x: 0, y: 0.447), size: CGSize(width: 1, height: 0.08))
         
         let validateMatch: (String) -> Bool
-        let preProcessMatches: (String) -> String
         let recognitionLevel: VNRequestTextRecognitionLevel
         let recognitionLanguages: [String]
         let videoSessionPreset: AVCaptureSession.Preset
@@ -41,7 +41,6 @@ extension TextScannerView {
         
         public init(
             validateMatch: @escaping (String) -> Bool = { _ in return true },
-            preProcessMatches: @escaping (String) -> String = { return $0 },
             recognitionLevel: VNRequestTextRecognitionLevel = .accurate,
             recognitionLanguages: [String] = [],
             videoSessionPreset: AVCaptureSession.Preset = .high,
@@ -50,7 +49,6 @@ extension TextScannerView {
             parentView: TextScannerView
         ) {
             self.validateMatch = validateMatch
-            self.preProcessMatches = preProcessMatches
             self.recognitionLevel = recognitionLevel
             self.recognitionLanguages = recognitionLanguages
             self.videoSessionPreset = videoSessionPreset
@@ -63,7 +61,6 @@ extension TextScannerView {
         required init?(coder: NSCoder) {
             self.showViewfinder = false
             self.validateMatch = { _ in return true }
-            self.preProcessMatches = { return $0 }
             self.recognitionLevel = .accurate
             self.recognitionLanguages = []
             self.videoSessionPreset = .high
@@ -166,6 +163,13 @@ extension TextScannerView {
         var previewLayer: AVCaptureVideoPreviewLayer!
         let fallbackVideoCaptureDevice = AVCaptureDevice.default(for: .video)
         
+        var roiQuantatized: CGRect {
+            CGRect(x: roi.origin.x * previewLayer.frame.width + previewLayer.frame.origin.x,
+                   y: roi.origin.y * previewLayer.frame.height + previewLayer.frame.origin.y,
+                   width: roi.size.width * previewLayer.frame.width,
+                   height: roi.size.height * previewLayer.frame.height)
+        }
+        
         private lazy var viewFinder: UIImageView? = {
             guard let image = UIImage(named: "viewfinder", in: .module, with: nil) else {
                 return nil
@@ -221,7 +225,7 @@ extension TextScannerView {
         override public func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
             
-            setupSession()
+//            setupSession()
         }
         
         private func setupSession() {
@@ -237,6 +241,7 @@ extension TextScannerView {
             previewLayer.videoGravity = .resizeAspectFill
             view.layer.addSublayer(previewLayer)
             addviewfinder()
+            addRegionOfInterestRect()
             
             reset()
             
@@ -245,6 +250,17 @@ extension TextScannerView {
                     self.captureSession?.startRunning()
                 }
             }
+        }
+        
+        private func addRegionOfInterestRect() {
+            
+            let roiLayer = CAShapeLayer()
+            roiLayer.strokeColor = UIColor.red.cgColor
+            roiLayer.lineWidth = 2.0
+            roiLayer.fillColor = UIColor.clear.cgColor
+            roiLayer.path = UIBezierPath(rect: roiQuantatized).cgPath
+            
+            previewLayer.addSublayer(roiLayer)
         }
         
         private func handleCameraPermission() {
@@ -490,7 +506,7 @@ extension TextScannerView {
             }
             
             let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)!
-            let ciimage = CIImage(cvPixelBuffer: imageBuffer)
+            let ciimage = CIImage(cvPixelBuffer: imageBuffer).oriented(.left) // TODO: use correct orientation
             let image = convert(cmage: ciimage)
             
             guard let cgImage = image.cgImage else { return }
@@ -503,6 +519,7 @@ extension TextScannerView {
             
             request.recognitionLevel = self.recognitionLevel
             request.recognitionLanguages = self.recognitionLanguages
+            request.regionOfInterest = roi
             
             do {
                 // Perform the text-recognition request.
@@ -519,7 +536,7 @@ extension TextScannerView {
         private func recognizeTextHandler(request: VNRequest, error: Error?) {
             guard let observations = request.results as? [VNRecognizedTextObservation] else { return }
             let recognizedStrings = observations.compactMap { observation in
-                return preProcessMatches(observation.topCandidates(1).first?.string ?? "")
+                return observation.topCandidates(1).first?.string
             }
             
             guard let match = recognizedStrings.first(where: {
@@ -619,15 +636,3 @@ extension TextScannerView.TextScannerViewController: AVCapturePhotoCaptureDelega
     }
     
 }
-
-//@available(macCatalyst 14.0, *)
-//public extension AVCaptureDevice {
-//    
-//    /// This returns the Ultra Wide Camera on capable devices and the default Camera for Video otherwise.
-//    static var bestForVideo: AVCaptureDevice? {
-//        let deviceHasUltraWideCamera = !AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInUltraWideCamera], mediaType: .video, position: .back).devices.isEmpty
-//        return deviceHasUltraWideCamera ? AVCaptureDevice.default(.builtInUltraWideCamera, for: .video, position: .back) : AVCaptureDevice.default(for: .video)
-//    }
-//    
-//}
-

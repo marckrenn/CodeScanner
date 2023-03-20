@@ -56,7 +56,6 @@ public enum TextScanMode {
 public struct TextScannerView: UIViewControllerRepresentable {
     
     public let validateMatch: (String) -> Bool
-    public let preProcessMatches: (String) -> String
     public let recognitionLevel: VNRequestTextRecognitionLevel
     public let recognitionLanguages: [String]
     public let scanMode: ScanMode
@@ -74,7 +73,6 @@ public struct TextScannerView: UIViewControllerRepresentable {
 
     public init(
         validateMatch: @escaping (String) -> Bool = { _ in return true },
-        preProcessMatches: @escaping (String) -> String = { return $0 },
         recognitionLevel: VNRequestTextRecognitionLevel = .accurate,
         recognitionLanguages: [String] = [],
         scanMode: ScanMode = .once,
@@ -91,7 +89,6 @@ public struct TextScannerView: UIViewControllerRepresentable {
         completion: @escaping (Result<TextScanResult, ScanError>) -> Void
     ) {
         self.validateMatch = validateMatch
-        self.preProcessMatches = preProcessMatches
         self.recognitionLevel = recognitionLevel
         self.recognitionLanguages = recognitionLanguages
         self.scanMode = scanMode
@@ -110,7 +107,6 @@ public struct TextScannerView: UIViewControllerRepresentable {
 
     public func makeUIViewController(context: Context) -> TextScannerViewController {
         return TextScannerViewController(validateMatch: validateMatch,
-                                         preProcessMatches: preProcessMatches,
                                          recognitionLevel: recognitionLevel,
                                          recognitionLanguages: recognitionLanguages,
                                          videoSessionPreset: videoSessionPreset,
