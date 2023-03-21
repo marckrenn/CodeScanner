@@ -151,10 +151,7 @@ extension TextScannerView {
         
         override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
             // Send back their simulated data, as if it was one of the types they were scanning for
-            found(ScanResult(
-                string: parentView.simulatedData,
-                type: parentView.codeTypes.first ?? .qr, image: nil
-            ))
+            found(TextScanResult(string: parentView.simulatedData))
         }
         
 #else
