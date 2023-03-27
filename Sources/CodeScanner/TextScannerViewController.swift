@@ -22,11 +22,13 @@ extension TextScannerView {
         var lastTime = Date(timeIntervalSince1970: 0)
         private let showViewfinder: Bool
         private var bufferSize = CGSize(width: 0, height: 0)
-        let roi = CGRect(origin: CGPoint(x: 0, y: 0.447), size: CGSize(width: 1, height: 0.08))
+        private let roiLayer = CAShapeLayer()
         
         let validateMatch: (String) -> Bool
         let recognitionLevel: VNRequestTextRecognitionLevel
         let recognitionLanguages: [String]
+        var regionOfInterest: CGRect
+        var drawRegionOfInterest: Bool
         let videoSessionPreset: AVCaptureSession.Preset
         let videoSettings: [String : Any]
         
@@ -43,6 +45,8 @@ extension TextScannerView {
             validateMatch: @escaping (String) -> Bool = { _ in return true },
             recognitionLevel: VNRequestTextRecognitionLevel = .accurate,
             recognitionLanguages: [String] = [],
+            regionOfInterest: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
+            drawRegionOfInterest: Bool = false,
             videoSessionPreset: AVCaptureSession.Preset = .high,
             videoSettings: [String : Any] = [kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)],
             showViewfinder: Bool = false,
@@ -51,6 +55,8 @@ extension TextScannerView {
             self.validateMatch = validateMatch
             self.recognitionLevel = recognitionLevel
             self.recognitionLanguages = recognitionLanguages
+            self.regionOfInterest = regionOfInterest
+            self.drawRegionOfInterest = drawRegionOfInterest
             self.videoSessionPreset = videoSessionPreset
             self.videoSettings = videoSettings
             self.parentView = parentView
@@ -63,6 +69,8 @@ extension TextScannerView {
             self.validateMatch = { _ in return true }
             self.recognitionLevel = .accurate
             self.recognitionLanguages = []
+            self.regionOfInterest = CGRect(x: 0, y: 0, width: 1, height: 1)
+            self.drawRegionOfInterest = false
             self.videoSessionPreset = .high
             self.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)]
             super.init(coder: coder)
@@ -160,13 +168,6 @@ extension TextScannerView {
         var previewLayer: AVCaptureVideoPreviewLayer!
         let fallbackVideoCaptureDevice = AVCaptureDevice.default(for: .video)
         
-        var roiQuantatized: CGRect {
-            CGRect(x: roi.origin.x * previewLayer.frame.width + previewLayer.frame.origin.x,
-                   y: roi.origin.y * previewLayer.frame.height + previewLayer.frame.origin.y,
-                   width: roi.size.width * previewLayer.frame.width,
-                   height: roi.size.height * previewLayer.frame.height)
-        }
-        
         private lazy var viewFinder: UIImageView? = {
             guard let image = UIImage(named: "viewfinder", in: .module, with: nil) else {
                 return nil
@@ -222,7 +223,7 @@ extension TextScannerView {
         override public func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
             
-//            setupSession()
+            //            setupSession()
         }
         
         private func setupSession() {
@@ -238,7 +239,12 @@ extension TextScannerView {
             previewLayer.videoGravity = .resizeAspectFill
             view.layer.addSublayer(previewLayer)
             addviewfinder()
-            addRegionOfInterestRect()
+            
+            previewLayer.addSublayer(roiLayer)
+            
+            if drawRegionOfInterest {
+                updateRegionOfInterestRect()
+            }
             
             reset()
             
@@ -249,15 +255,18 @@ extension TextScannerView {
             }
         }
         
-        private func addRegionOfInterestRect() {
+        private func updateRegionOfInterestRect() {
             
-            let roiLayer = CAShapeLayer()
+            let roiNormalized =
+            CGRect(x: regionOfInterest.origin.x * previewLayer.frame.width + previewLayer.frame.origin.x,
+                   y: regionOfInterest.origin.y * previewLayer.frame.height + previewLayer.frame.origin.y,
+                   width: regionOfInterest.size.width * previewLayer.frame.width,
+                   height: regionOfInterest.size.height * previewLayer.frame.height)
+            
             roiLayer.strokeColor = UIColor.red.cgColor
             roiLayer.lineWidth = 2.0
             roiLayer.fillColor = UIColor.clear.cgColor
-            roiLayer.path = UIBezierPath(rect: roiQuantatized).cgPath
-            
-            previewLayer.addSublayer(roiLayer)
+            roiLayer.path = UIBezierPath(rect: roiNormalized).cgPath
         }
         
         private func handleCameraPermission() {
@@ -461,7 +470,23 @@ extension TextScannerView {
         }
 #endif
         
-        func updateViewController(isTorchOn: Bool, isGalleryPresented: Bool, isManualCapture: Bool, isManualSelect: Bool) {
+        func updateViewController(isTorchOn: Bool,
+                                  isGalleryPresented: Bool,
+                                  isManualCapture: Bool,
+                                  isManualSelect: Bool,
+                                  regionOfInterest: CGRect,
+                                  drawRegionOfInterest: Bool
+        ) {
+            
+            self.regionOfInterest = regionOfInterest
+            self.drawRegionOfInterest = drawRegionOfInterest
+            
+            if drawRegionOfInterest {
+                updateRegionOfInterestRect() }
+            else {
+                roiLayer.strokeColor = .init(gray: 0, alpha: 0)
+            }
+            
             if let backCamera = AVCaptureDevice.bestForVideo,
                backCamera.hasTorch
             {
@@ -516,7 +541,7 @@ extension TextScannerView {
             
             request.recognitionLevel = self.recognitionLevel
             request.recognitionLanguages = self.recognitionLanguages
-            request.regionOfInterest = roi
+            request.regionOfInterest = regionOfInterest
             
             do {
                 // Perform the text-recognition request.
@@ -607,14 +632,14 @@ extension TextScannerView.TextScannerViewController: AVCapturePhotoCaptureDelega
         error: Error?
     ) {
         isCapturing = false
-        guard let imageData = photo.fileDataRepresentation() else {
-            print("Error while generating image from photo capture data.");
-            return
-        }
-        guard let qrImage = UIImage(data: imageData) else {
-            print("Unable to generate UIImage from image data.");
-            return
-        }
+        //        guard let imageData = photo.fileDataRepresentation() else {
+        //            print("Error while generating image from photo capture data.");
+        //            return
+        //        }
+        //        guard let qrImage = UIImage(data: imageData) else {
+        //            print("Unable to generate UIImage from image data.");
+        //            return
+        //        }
         //        handler?(qrImage) // TODO
     }
     

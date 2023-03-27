@@ -58,6 +58,8 @@ public struct TextScannerView: UIViewControllerRepresentable {
     public let validateMatch: (String) -> Bool
     public let recognitionLevel: VNRequestTextRecognitionLevel
     public let recognitionLanguages: [String]
+    public var regionOfInterest: CGRect
+    public var drawRegionOfInterest: Bool
     public let scanMode: ScanMode
     public let manualSelect: Bool
     public let scanInterval: Double
@@ -75,6 +77,8 @@ public struct TextScannerView: UIViewControllerRepresentable {
         validateMatch: @escaping (String) -> Bool = { _ in return true },
         recognitionLevel: VNRequestTextRecognitionLevel = .accurate,
         recognitionLanguages: [String] = [],
+        regionOfInterest: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
+        drawRegionOfInterest: Bool = false,
         scanMode: ScanMode = .once,
         manualSelect: Bool = false,
         scanInterval: Double = 2.0,
@@ -91,6 +95,8 @@ public struct TextScannerView: UIViewControllerRepresentable {
         self.validateMatch = validateMatch
         self.recognitionLevel = recognitionLevel
         self.recognitionLanguages = recognitionLanguages
+        self.regionOfInterest = regionOfInterest
+        self.drawRegionOfInterest = drawRegionOfInterest
         self.scanMode = scanMode
         self.manualSelect = manualSelect
         self.showViewfinder = showViewfinder
@@ -109,6 +115,8 @@ public struct TextScannerView: UIViewControllerRepresentable {
         return TextScannerViewController(validateMatch: validateMatch,
                                          recognitionLevel: recognitionLevel,
                                          recognitionLanguages: recognitionLanguages,
+                                         regionOfInterest: regionOfInterest,
+                                         drawRegionOfInterest: drawRegionOfInterest,
                                          videoSessionPreset: videoSessionPreset,
                                          videoSettings: videoSettings,
                                          showViewfinder: showViewfinder,
@@ -121,7 +129,9 @@ public struct TextScannerView: UIViewControllerRepresentable {
             isTorchOn: isTorchOn,
             isGalleryPresented: isGalleryPresented.wrappedValue,
             isManualCapture: scanMode == .manual,
-            isManualSelect: manualSelect
+            isManualSelect: manualSelect,
+            regionOfInterest: regionOfInterest,
+            drawRegionOfInterest: drawRegionOfInterest
         )
     }
     
